@@ -6,6 +6,10 @@
 // 2021
 // Added file overwrite support
 
+// Modified by Ahmed Mohammed
+// 2023
+// Added support for returning uploaded file url
+
 package main
 
 import (
@@ -50,25 +54,29 @@ func uploadToDrive(svc *drive.Service, filename string, folderId string, driveFi
 		githubactions.Fatalf(fmt.Sprintf("opening file with filename: %v failed with error: %v", filename, err))
 	}
 
+	var updatedFile *drive.File
 	if driveFile != nil {
 		f := &drive.File{
 			Name:     name,
 			MimeType: mimeType,
 		}
-		_, err = svc.Files.Update(driveFile.Id, f).AddParents(folderId).Media(file).SupportsAllDrives(true).Do()
+		updatedFile, err = svc.Files.Update(driveFile.Id, f).AddParents(folderId).Media(file).SupportsAllDrives(true).Do()
 	} else {
 		f := &drive.File{
 			Name:     name,
 			MimeType: mimeType,
 			Parents:  []string{folderId},
 		}
-		_, err = svc.Files.Create(f).Media(file).SupportsAllDrives(true).Do()
+		updatedFile, err = svc.Files.Create(f).Media(file).SupportsAllDrives(true).Do()
 	}
 
 	if err != nil {
-		githubactions.Fatalf(fmt.Sprintf("creating/updating file failed with error: %v", err))
+		githubactions.Fatalf("creating/updating file failed with error: %v", err)
+		githubactions.SetOutput("UPLOADED_FILE_URL", "")
 	} else {
 		githubactions.Debugf("Uploaded/Updated file.")
+		url := "https://drive.google.com/file/d/" + updatedFile.Id
+		githubactions.SetOutput("UPLOADED_FILE_URL", url)
 	}
 }
 
