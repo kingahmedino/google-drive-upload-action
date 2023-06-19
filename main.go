@@ -40,18 +40,18 @@ const (
 	namePrefixInput          = "namePrefix"
 )
 
-func uploadToDrive(svc *drive.Service, filename string, folderId string, driveFile *drive.File, name string, mimeType string) (string, error) {
+func uploadToDrive(svc *drive.Service, filename string, folderId string, driveFile *drive.File, name string, mimeType string) {
 	fi, err := os.Lstat(filename)
 	if err != nil {
-		return "", fmt.Errorf("lstat of file with filename: %v failed with error: %v", filename, err)
+		githubactions.Fatalf(fmt.Sprintf("lstat of file with filename: %v failed with error: %v", filename, err))
 	}
 	if fi.IsDir() {
 		fmt.Printf("%s is a directory. skipping upload.", filename)
-		return "", nil
+		return
 	}
 	file, err := os.Open(filename)
 	if err != nil {
-		return "", fmt.Errorf("opening file with filename: %v failed with error: %v", filename, err)
+		githubactions.Fatalf(fmt.Sprintf("opening file with filename: %v failed with error: %v", filename, err))
 	}
 
 	var updatedFile *drive.File
@@ -71,14 +71,14 @@ func uploadToDrive(svc *drive.Service, filename string, folderId string, driveFi
 	}
 
 	if err != nil {
-		return "", fmt.Errorf("creating/updating file failed with error: %v", err)
+		githubactions.Fatalf(fmt.Sprintf("creating/updating file failed with error: %v", err))
+	} else {
+		githubactions.Debugf("Uploaded/Updated file: https://drive.google.com/file/d/%s/view", updatedFile.Id)
 	}
-
-	link := fmt.Sprintf("https://drive.google.com/file/d/%s/view", updatedFile.Id)
-	return link, nil
 }
 
 func main() {
+
 	// get filename argument from action input
 	filename := githubactions.GetInput(filenameInput)
 	if filename == "" {
@@ -114,122 +114,165 @@ func main() {
 	// get file mimeType argument from action input
 	mimeType := githubactions.GetInput(mimeTypeInput)
 
-	// get optional flags
-	useCompleteSourceNameFlag, _ := strconv.ParseBool(githubactions.GetInput(useCompleteSourceName))
-	mirrorDirectoryStructureFlag, _ := strconv.ParseBool(githubactions.GetInput(mirrorDirectoryStructure))
-	namePrefix := githubactions.GetInput(namePrefixInput)
+	var useCompleteSourceFilenameAsNameFlag bool
+	useCompleteSourceFilenameAsName := githubactions.GetInput(useCompleteSourceName)
+	if useCompleteSourceFilenameAsName == "" {
+		fmt.Println("useCompleteSourceFilenameAsName is disabled.")
+		useCompleteSourceFilenameAsNameFlag = false
+	} else {
+		useCompleteSourceFilenameAsNameFlag, _ = strconv.ParseBool(useCompleteSourceFilenameAsName)
+	}
 
-	// get credentials from action input
+	var mirrorDirectoryStructureFlag bool
+	mirrorDirectoryStructure := githubactions.GetInput(mirrorDirectoryStructure)
+	if mirrorDirectoryStructure == "" {
+		fmt.Println("mirrorDirectoryStructure is disabled.")
+		mirrorDirectoryStructureFlag = false
+	} else {
+		mirrorDirectoryStructureFlag, _ = strconv.ParseBool(mirrorDirectoryStructure)
+	}
+	// get filename prefix
+	filenamePrefix := githubactions.GetInput(namePrefixInput)
+
+	// get base64 encoded credentials argument from action input
 	credentials := githubactions.GetInput(credentialsInput)
 	if credentials == "" {
 		missingInput(credentialsInput)
 	}
+	// add base64 encoded credentials argument to mask
+	githubactions.AddMask(credentials)
 
-	// decode credentials from base64
-	decodedCreds, err := base64.StdEncoding.DecodeString(credentials)
+	// decode credentials to []byte
+	decodedCredentials, err := base64.StdEncoding.DecodeString(credentials)
 	if err != nil {
-		githubactions.Fatalf(fmt.Sprintf("Failed to decode credentials: %v", err))
+		githubactions.Fatalf(fmt.Sprintf("base64 decoding of 'credentials' failed with error: %v", err))
 	}
 
-	// create a JWT config from the credentials
-	jwtConfig, err := google.JWTConfigFromJSON(decodedCreds, scope)
+	creds := strings.TrimSuffix(string(decodedCredentials), "\n")
+
+	// add decoded credentials argument to mask
+	githubactions.AddMask(creds)
+
+	// fetching a JWT config with credentials and the right scope
+	conf, err := google.JWTConfigFromJSON([]byte(creds), scope)
 	if err != nil {
-		githubactions.Fatalf(fmt.Sprintf("Failed to create JWT config: %v", err))
+		githubactions.Fatalf(fmt.Sprintf("fetching JWT credentials failed with error: %v", err))
 	}
 
-	// create a context and client for Google Drive API
+	// instantiating a new drive service
 	ctx := context.Background()
-	client := jwtConfig.Client(ctx)
-
-	// create a new drive service client
-	svc, err := drive.NewService(ctx, drive.WithHTTPClient(client))
+	svc, err := drive.New(conf.Client(ctx))
 	if err != nil {
-		githubactions.Fatalf(fmt.Sprintf("Failed to create Drive service client: %v", err))
+		log.Println(err)
 	}
 
-	// iterate over files matching the pattern
-	for _, file := range files {
-		// handle file names with spaces
-		escapedName := strings.Replace(file, " ", "\\ ", -1)
+	useSourceFilename := len(files) > 1
 
-		// create directory structure if mirrorDirectoryStructure flag is enabled
+	// Save the folderId because it might get overwritten by createDriveDirectory
+	originalFolderId := folderId
+	for _, file := range files {
+		folderId = originalFolderId
+		var targetName string
+		fmt.Printf("Processing file %s\n", file)
 		if mirrorDirectoryStructureFlag {
-			fileDir := filepath.Dir(escapedName)
-			if fileDir != "." {
-				_, err = createDriveDirectory(svc, folderId, fileDir)
-				if err != nil {
-					githubactions.Fatalf(fmt.Sprintf("Failed to create directory structure on Google Drive: %v", err))
+			directoryStructure := strings.Split(filepath.Dir(file), string(os.PathSeparator))
+			fmt.Printf("Mirroring directory structure: %v\n", directoryStructure)
+			for _, dir := range directoryStructure {
+				folderId, err = createDriveDirectory(svc, folderId, dir)
+			}
+		}
+		if useCompleteSourceFilenameAsNameFlag {
+			targetName = file
+		} else if useSourceFilename || name == "" {
+			targetName = filepath.Base(file)
+		} else {
+			targetName = name
+		}
+		if targetName == "" {
+			githubactions.Fatalf("Could not discover target file name")
+		} else if filenamePrefix != "" {
+			targetName = filenamePrefix + targetName
+		}
+		uploadFile(svc, file, folderId, targetName, mimeType, overwriteFlag)
+	}
+}
+
+func createDriveDirectory(svc *drive.Service, folderId string, name string) (string, error) {
+	fmt.Printf("Checking for existing folder %s\n", name)
+	r, err := svc.Files.List().Fields("files(name,id,mimeType,parents)").Q("name='" + name + "'" + " and mimeType='application/vnd.google-apps.folder'").IncludeItemsFromAllDrives(true).Corpora("allDrives").SupportsAllDrives(true).Do()
+	if err != nil {
+		log.Fatalf("Unable to check for folder : %v", err)
+		fmt.Println("Unable to check for folder")
+	}
+	foundFolders := 0
+	var nextFolderId string
+	for _, i := range r.Files {
+		for _, p := range i.Parents {
+			if p == folderId {
+				foundFolders++
+				fmt.Printf("Found existing folder %s.\n", name)
+				nextFolderId = i.Id
+			}
+		}
+	}
+	if foundFolders == 0 {
+		fmt.Printf("Creating folder: %s\n", name)
+		f := &drive.File{
+			Name:     name,
+			MimeType: "application/vnd.google-apps.folder",
+			Parents:  []string{folderId},
+		}
+		d, err := svc.Files.Create(f).Fields("id").SupportsAllDrives(true).Do()
+		if err != nil {
+			log.Fatalf("Unable to create folder : %v", err)
+			fmt.Println("Unable to create folder")
+		}
+		nextFolderId = d.Id
+	}
+	return nextFolderId, nil
+}
+
+func uploadFile(svc *drive.Service, filename string, folderId string, name string, mimeType string, overwriteFlag bool) {
+
+	fmt.Printf("target file name: %s\n", name)
+
+	if overwriteFlag {
+		r, err := svc.Files.List().Fields("files(name,id,mimeType,parents)").Q("name='" + name + "'").IncludeItemsFromAllDrives(true).Corpora("allDrives").SupportsAllDrives(true).Do()
+		if err != nil {
+			log.Fatalf("Unable to retrieve files: %v", err)
+			fmt.Println("Unable to retrieve files")
+		}
+		fmt.Printf("Files: %d\n", len(r.Files))
+		var currentFile *drive.File = nil
+		for _, i := range r.Files {
+			found := false
+			if name == i.Name {
+				currentFile = i
+				for _, p := range i.Parents {
+					if p == folderId {
+						fmt.Println("file found in expected folder")
+						found = true
+						break
+					}
 				}
 			}
-		}
-
-		// determine the name for the uploaded file
-		var uploadedFileName string
-		if useCompleteSourceNameFlag {
-			uploadedFileName = file
-		} else {
-			baseFileName := filepath.Base(file)
-			if namePrefix != "" {
-				uploadedFileName = namePrefix + baseFileName
-			} else if name != "" {
-				uploadedFileName = name
-			} else {
-				uploadedFileName = baseFileName
+			if found {
+				break
 			}
 		}
 
-		// check if the file already exists in the folder
-		driveFile, err := findFileByName(svc, uploadedFileName, folderId)
-		if err != nil {
-			githubactions.Fatalf(fmt.Sprintf("Failed to check existing files in the folder: %v", err))
+		if currentFile == nil {
+			fmt.Println("No similar files found. Creating a new file")
+			uploadToDrive(svc, filename, folderId, nil, name, mimeType)
+		} else {
+			fmt.Printf("Overwriting file: %s (%s)\n", currentFile.Name, currentFile.Id)
+			uploadToDrive(svc, filename, folderId, currentFile, name, mimeType)
 		}
-
-		// upload the file to Google Drive
-		uploadedLink, err := uploadToDrive(svc, file, folderId, driveFile, uploadedFileName, mimeType)
-		if err != nil {
-			githubactions.Fatalf(fmt.Sprintf("Failed to upload file to Google Drive: %v", err))
-		}
-
-		// print the link to the uploaded file
-		githubactions.Infof("Uploaded file: %s", uploadedLink)
+	} else {
+		uploadToDrive(svc, filename, folderId, nil, name, mimeType)
 	}
-}
-
-func createDriveDirectory(svc *drive.Service, parentFolderID, folderName string) (string, error) {
-	folder, err := findFileByName(svc, folderName, parentFolderID)
-	if err != nil {
-		return "", fmt.Errorf("failed to check existing folders in the parent folder: %v", err)
-	}
-	if folder != nil {
-		return folder.Id, nil
-	}
-
-	d := &drive.File{
-		Name:     folderName,
-		MimeType: "application/vnd.google-apps.folder",
-		Parents:  []string{parentFolderID},
-	}
-
-	newFolder, err := svc.Files.Create(d).SupportsAllDrives(true).Do()
-	if err != nil {
-		return "", fmt.Errorf("failed to create directory on Google Drive: %v", err)
-	}
-
-	return newFolder.Id, nil
-}
-
-func findFileByName(svc *drive.Service, name, parentFolderID string) (*drive.File, error) {
-	query := fmt.Sprintf("name = '%s' and '%s' in parents and trashed = false", name, parentFolderID)
-	files, err := svc.Files.List().Q(query).Do()
-	if err != nil {
-		return nil, fmt.Errorf("error searching for file by name: %v", err)
-	}
-	if len(files.Files) > 0 {
-		return files.Files[0], nil
-	}
-	return nil, nil
 }
 
 func missingInput(inputName string) {
-	githubactions.Fatalf(fmt.Sprintf("Input %s is missing or empty", inputName))
+	githubactions.Fatalf(fmt.Sprintf("missing input '%v'", inputName))
 }
