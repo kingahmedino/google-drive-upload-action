@@ -1,5 +1,5 @@
 [![build](https://github.com/kingahmedino/google-drive-upload-git-action/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/kingahmedino/google-drive-upload-git-action/actions)
-[![Go Report Card](https://goreportcard.com/badge/github.com/kingahmedino/google-drive-upload-git-action)](https://goreportcard.com/report/github.com/kingahmedino/google-drive-upload-git-action)
+[![Go Report Card](https://goreportcard.com/badge/github.com/adityak74/google-drive-upload-git-action)](https://goreportcard.com/report/github.com/adityak74/google-drive-upload-git-action)
 
 # google-drive-upload-git-action
 
