@@ -73,7 +73,7 @@ func uploadToDrive(svc *drive.Service, filename string, folderId string, driveFi
 	if err != nil {
 		githubactions.Fatalf(fmt.Sprintf("creating/updating file failed with error: %v", err))
 	} else {
-		githubactions.Debugf("Uploaded/Updated file: https://drive.google.com/file/d/%s/view", updatedFile.Id)
+		githubactions.Printf("Uploaded/Updated file: https://drive.google.com/file/d/%s/view", updatedFile.Id)
 	}
 }
 
