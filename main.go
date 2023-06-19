@@ -83,7 +83,7 @@ func uploadToDrive(svc *drive.Service, filename string, folderId string, driveFi
 func setGitHubOutput(value string) {
 	err := os.Setenv("GITHUB_OUTPUT", value)
 	if err != nil {
-		log.Fatalf("Failed to set GITHUB_OUTPUT: %v", err)
+		githubactions.Fatalf("Failed to set GITHUB_OUTPUT: %v", err)
 	}
 }
 
