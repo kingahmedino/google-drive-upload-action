@@ -1,9 +1,9 @@
 module gdrive-upload-action
 
-go 1.20
+go 1.16
 
 require (
-	cloud.google.com/go v1.20 // indirect
+	cloud.google.com/go v1.16 // indirect
 	github.com/sethvargo/go-githubactions v1.1.0
 	golang.org/x/oauth2 v0.0.0-20210220000619-9bb904979d93
 	golang.org/x/sys v0.0.0-20210225134936-a50acf3fe073 // indirect
