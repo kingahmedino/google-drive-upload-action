@@ -1,6 +1,6 @@
 module gdrive-upload-action
 
-go 1.17
+go 1.20
 
 require (
 	cloud.google.com/go v0.75.0 // indirect
