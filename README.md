@@ -3,7 +3,7 @@
 
 # google-drive-upload-git-action
 
-Github action that uploads files to Google Drive.
+Github action that uploads files to Google Drive and saves a link to the uploaded file in `GITHUB_OUTPUT`.
 **This only works with a Google Service Account!**
 
 Thanks to [Team Tumbleweed](https://github.com/team-tumbleweed) for developing the initial version of this actions package.
@@ -73,11 +73,19 @@ Required: **YES**.
 
 A base64 encoded string with the [GSA credentials](https://stackoverflow.com/questions/46287267/how-can-i-get-the-file-service-account-json-for-google-translate-api/46290808).
 
+# Outputs
+
+## `UPLOADED_FILE_URL`
+
+Required: **NO**.
+
+The url of the uploaded file.
+
 # Usage Example
 
-## Simple Workflow
+## Simple Workflow 1
 
-In this example we stored the folderId and credentials as action secrets. This is highly recommended as leaking your credentials key will allow anyone to use your service account.
+In this example, we stored the folderId and credentials as action secrets. This is highly recommended as leaking your credentials key will allow anyone to use your service account.
 
 ```yaml
 # .github/workflows/main.yml
@@ -118,4 +126,44 @@ jobs:
           folderId: ${{ secrets.folderId }}
           overwrite: "true"
           mirrorDirectoryStructure: "true"
+```
+
+## Simple Workflow 2
+
+In this example, we do the same thing as above but we get the url to the uploaded file from `GITHUB_OUTPUT` for use in subsequent steps in our workflow.
+
+```yaml
+# .github/workflows/main.yml
+name: Main
+on: [push]
+
+jobs:
+  my_job:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Archive files
+        run: |
+          sudo apt-get update
+          sudo apt-get install zip
+          zip -r archive.zip *
+
+      - name: Upload to gdrive
+        uses: kingahmedino/google-drive-upload-git-action@main
+        with:
+          credentials: ${{ secrets.credentials }}
+          filename: "archive.zip"
+          folderId: ${{ secrets.folderId }}
+          name: "documentation.zip" # optional string
+          overwrite: "true" # optional boolean
+        id: upload_build
+        
+      - name: Comment upload URL
+        uses: thollander/actions-comment-pull-request@v2
+        with:
+          message: |
+            You can access artifacts from this build here: ${{ steps.upload_build.outputs.UPLOADED_FILE_URL }}
 ```
