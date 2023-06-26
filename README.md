@@ -1,7 +1,7 @@
 [![build](https://github.com/kingahmedino/google-drive-upload-git-action/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/kingahmedino/google-drive-upload-git-action/actions)
 [![Go Report Card](https://goreportcard.com/badge/github.com/adityak74/google-drive-upload-git-action)](https://goreportcard.com/report/github.com/adityak74/google-drive-upload-git-action)
 
-# google-drive-upload-git-action
+# google-drive-upload-action
 
 Github action that uploads files to Google Drive and saves a link to the uploaded file in `GITHUB_OUTPUT`.
 **This only works with a Google Service Account!**
